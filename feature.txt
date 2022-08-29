@@ -61,6 +61,7 @@ namespace LulaLend.WebApi.Endpoints
         public async Task<IActionResult> GetFundingQuote([FromRoute] int id)
         {
 		feature 1 Oleks
+		commit 1
             return Ok(await _creditApiService.GetFundingQuote(id));
         }
 
