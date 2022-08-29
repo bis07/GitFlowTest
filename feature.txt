@@ -63,6 +63,7 @@ namespace LulaLend.WebApi.Endpoints
 		feature 1 Oleks
 		commit 1
             return Ok(await _creditApiService.GetFundingQuote(id));
+			feature 2 commit 1
         }
 
         [HttpGet("fundingApi/types")]
