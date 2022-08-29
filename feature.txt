@@ -1,0 +1,373 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using AutoMapper;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
+using Refit;
+
+using LulaLend.Core.HttpContext;
+using LulaLend.Domains.Enums;
+using LulaLend.Domains.Models.CreditApi;
+using LulaLend.Domains.Models.CreditApi.Enums;
+using LulaLend.Domains.Models.CreditApi.Responses;
+using LulaLend.Domains.Models.CreditApi.Requests;
+using LulaLend.ExternalService.Contracts.Commands;
+using LulaLend.ExternalService.Contracts.Services;
+using LulaLend.Service.Contracts.Services;
+using LulaLend.Service.Contracts.Services.CreditApi;
+using LulaLend.WebApi.Endpoints.Base;
+using LulaLend.WebApi.ViewModels.CreditApi;
+
+using AuthorizeAttribute = Microsoft.AspNetCore.Authorization.AuthorizeAttribute;
+using LulaLend.ExternalService.Implementation.Services.Stitch;
+
+namespace LulaLend.WebApi.Endpoints
+{
+    [Route("api/v1/[controller]")]
+    [Authorize]
+    public class CreditApiController : BaseController
+    {
+        private readonly IMapper _mapper;
+        private readonly ICreditApiService _creditApiService;
+        private readonly IStitchService _stitchService;
+        private readonly ICreditApiServiceDecorator _creditApiServiceDecorator;
+
+        public CreditApiController(
+            IMapper mapper,
+            IRequestContext requestContextProvider,
+            IHttpClientFactory httpClientFactory,
+            ICreditApiServiceDecorator creditApiServiceDecorator,
+            IStitchService stitchService)
+            : base(mapper, requestContextProvider)
+        {
+            _mapper = mapper;
+            _creditApiServiceDecorator = creditApiServiceDecorator;
+            _stitchService = stitchService;
+            var jsonSettings = new NewtonsoftJsonContentSerializer(new JsonSerializerSettings { ContractResolver = new CamelCasePropertyNamesContractResolver() });
+
+            _creditApiService = RestService.For<ICreditApiService>(httpClientFactory.CreateClient("CreditApiRefitHttpClient"),
+                new RefitSettings(jsonSettings)
+            );
+        }
+
+        [HttpGet("fundingQuote/{id}")]
+        [ProducesResponseType(typeof(CreditApiQuoteResponseModel), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetFundingQuote([FromRoute] int id)
+        {
+		feature 1 Oleks
+            return Ok(await _creditApiService.GetFundingQuote(id));
+        }
+
+        [HttpGet("fundingApi/types")]
+        [ProducesResponseType(typeof(List<FundingReasonViewModel>), StatusCodes.Status200OK)]
+        public IActionResult GetFundingApiTypes()
+        {
+            var fundingReasons = new List<FundingReasonViewModel>();
+
+            foreach (var fundingApiType in Enum.GetValues(typeof(FundingApiTypes)))
+            {
+                fundingReasons.Add(new FundingReasonViewModel
+                {
+                    FundingReasonId = (int)fundingApiType,
+                    FundingReasonName = ((FundingApiTypes)fundingApiType).ToString()
+                });
+            }
+
+            return Ok(fundingReasons);
+        }
+
+        [HttpGet("customer/{id}")]
+        [ProducesResponseType(typeof(CreateCustomerResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetCustomer([FromRoute] int id)
+        {
+            var resp = await _creditApiService.GetCustomer(id);
+
+            return Ok(resp);
+        }
+
+        [HttpGet("company/{lulaCompanyId}/advance")]
+        [ProducesResponseType(typeof(CompanyAdvanceResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAdvances([FromRoute] Guid lulaCompanyId)
+        {
+            var arrears = await _creditApiServiceDecorator.GetCompanyAdvances(lulaCompanyId);
+
+            return Ok(arrears);
+        }
+
+        [HttpGet("advance/{id}")]
+        [ProducesResponseType(typeof(GetAdvanceResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAdvance([FromRoute] int id)
+        {
+            var advance = await _creditApiService.GetAdvance(id);
+
+            return Ok(advance);
+        }
+
+        [HttpGet("company/{id}")]
+        [ProducesResponseType(typeof(CreateCustomerResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetCompany([FromRoute] int id)
+        {
+            var resp = await _creditApiService.GetCompany(id);
+
+            return Ok(resp);
+        }
+
+        [HttpGet("company/{companyId}/fundingApplication")]
+        [ProducesResponseType(typeof(CreateCustomerResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetCompanyFundingApplication([FromRoute] int companyId)
+        {
+            var resp = await _creditApiService.GetCompanyFundingApplication(companyId);
+
+            return Ok(resp);
+        }
+
+        [HttpGet("fundingApplication/{id}/legal")]
+        [ProducesResponseType(typeof(GetLegalByFundingApplicationIdResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetLegalByFundingApplicationId([FromRoute] int id)
+        {
+            var response = await _creditApiService.GetLegalByFundingApplicationId(id);
+
+            return Ok(response);
+        }
+
+        [HttpGet("fundingApplication/{id}/status")]
+        [ProducesResponseType(typeof(FundingApplicationStatusInfoViewModel), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetFundingApplicationStatus([FromRoute] int id)
+        {
+            var fundingAppDto = await _creditApiServiceDecorator.GetFundingApplicationStatus(id);
+            var response = _mapper.Map<FundingApplicationStatusInfoViewModel>(fundingAppDto);
+
+            return Ok(response);
+        }
+
+        [HttpGet("advance/{advanceId}/advanceRepayment")]
+        [ProducesResponseType(typeof(GetAdvanceRepaymentsResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAdvanceRepayments([FromRoute] int advanceId)
+        {
+            var advanceRepayments = await _creditApiService.GetAdvanceRepayments(advanceId);
+
+            return Ok(advanceRepayments);
+        }
+
+        [HttpGet("advance/{advanceId}/quote/{quoteId}/details")]
+        [ProducesResponseType(typeof(CashAdvanceDetailsViewModel), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetCashAdvanceDetails([FromRoute] int advanceId, [FromRoute] int quoteId)
+        {
+            var advanceDetails = await _creditApiServiceDecorator.GetCashAdvanceDetails(advanceId, quoteId);
+
+            return Ok(Mapper.Map<CashAdvanceDetailsViewModel>(advanceDetails));
+        }
+
+        [HttpGet("advanceRepayment/{id}")]
+        [ProducesResponseType(typeof(GetAdvanceRepaymentResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAdvanceRepayment([FromRoute] int id)
+        {
+            var advanceRepayment = await _creditApiService.GetAdvanceRepayment(id);
+
+            return Ok(advanceRepayment);
+        }
+
+        [HttpGet("company/{lulaCompanyId}/quoteReview/details")]
+        [ProducesResponseType(typeof(QuoteReviewDetailsViewModel), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetQuoteReviewDetails([FromRoute] Guid lulaCompanyId)
+        {
+            var quoteDetailsDto = await _creditApiServiceDecorator.GetQuoteReviewDetails(lulaCompanyId);
+            var quoteDetails = _mapper.Map<QuoteReviewDetailsViewModel>(quoteDetailsDto);
+
+            return Ok(quoteDetails);
+        }
+
+        [HttpGet("company/{lulaCompanyId}/creditDetails")]
+        [ProducesResponseType(typeof(CreditBaseViewModel), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetInitialDetails([FromRoute] Guid lulaCompanyId)
+        {
+            var creditApiIdsDto = await _creditApiServiceDecorator.GetCreditBaseData(lulaCompanyId, ContactId);
+            var creditidsViewModel = _mapper.Map<CreditBaseViewModel>(creditApiIdsDto);
+
+            return Ok(creditidsViewModel);
+        }
+
+        [HttpGet("company/{lulaCompanyId}/advance/review")]
+        [ProducesResponseType(typeof(AdvanceReviewViewModel), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetAdvanceReview([FromRoute] Guid lulaCompanyId)
+        {
+            var advanceReviewDto = await _creditApiServiceDecorator.GetAdvanceReview(lulaCompanyId);
+            var advanceReviewViewModel = _mapper.Map<AdvanceReviewViewModel>(advanceReviewDto);
+
+            return Ok(advanceReviewViewModel);
+        }
+
+        [HttpPost("customer/create")]
+        [ProducesResponseType(typeof(CreateCustomerResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateCustomer([FromBody] CustomerViewModel model, [FromQuery] Guid contactId)
+        {
+            return Ok(await _creditApiServiceDecorator.CreateCustomer(_mapper.Map<CustomerModel>(model), contactId));
+        }
+
+        [HttpPost("customer/{id}/address/create")]
+        [ProducesResponseType(typeof(CreateCustomerAddressResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateCustomerAddress([FromRoute] int id, [FromBody] CustomerAddressViewModel model)
+        {
+            var mapModel = _mapper.Map<AddressModel>(model);
+
+            return Ok(await _creditApiService.CreateCustomerAddress(id, mapModel));
+        }
+
+        [HttpPost("customer/{id}/company/create")]
+        [ProducesResponseType(typeof(CreateCustomerCompanyResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateCompany([FromRoute] int id, [FromBody] List<CompanyViewModel> model)
+        {
+            var request = model.Select(m => new CreateCompanyCommand
+            {
+                CompanyModel = _mapper.Map<CompanyModel>(m),
+                LulaCompanyId = m.LulaCompanyId
+            }).ToList();
+
+            return Ok(await _creditApiServiceDecorator.CreateCompany(id, request));
+        }
+
+        [HttpPost("customer/{customerId}/company/createfulldetails/{lulaCompanyId}")]
+        [ProducesResponseType(typeof(CreateFullCompanyDetailsResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateFullCompanyDetails([FromRoute] int customerId, [FromRoute] Guid lulaCompanyId)
+        {
+            var response = await _creditApiServiceDecorator.CreateFullCompanyDetails(customerId, lulaCompanyId);
+
+            return Ok(response);
+        }
+
+        [HttpPost("company/{id}/address/create")]
+        [ProducesResponseType(typeof(CreateCustomerCompanyAddressResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateCompanyAddress([FromRoute] int id, [FromBody] CompanyAddressModel model)
+        {
+            return Ok(await _creditApiService.CreateCompanyAddress(id, model));
+        }
+
+        [HttpPost("company/{id}/director/create")]
+        [ProducesResponseType(typeof(CreateCompanyDirectorResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateCompanyDirector([FromRoute] int id, [FromBody] List<CompanyDirectorModel> model)
+        {
+            return Ok(await _creditApiService.CreateCompanyDirectors(id, model));
+        }
+
+        [HttpGet("company/{id}/directors")]
+        [ProducesResponseType(typeof(CompanyDirectorResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> GetCompanyDirector([FromRoute] int id)
+        {
+            return Ok(await _creditApiService.GetCompanyDirectors(id));
+        }
+
+        [HttpPost("company/{id}/advance/create")]
+        [ProducesResponseType(typeof(CompanyAdvanceResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateCompanyBankAccount([FromRoute] int id, [FromBody] List<AdvanceModel> model)
+        {
+            return Ok(await _creditApiService.CreateCompanyAdvance(id, model));
+        }
+
+        [HttpPost("company/{id}/bankAccount/create")]
+        [ProducesResponseType(typeof(CreateCompanyBankAccountResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateCompanyBankAccount([FromRoute] int id, [FromBody] CompanyBankAccountModel model)
+        {
+            return Ok(await _creditApiService.CreateCompanyBankAccounts(id, new List<CompanyBankAccountModel> { model }));
+        }
+
+        [HttpPost("bankAccount/{id}/bankStatement")]
+        [ProducesResponseType(typeof(CreateCreditApiBankStatementResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateBankStatement([FromRoute] int id, [FromBody] List<IFormFile> bankStatements)
+        {
+            var statements = new List<string>();
+
+            foreach (var bankStatement in bankStatements)
+            {
+                if (bankStatement.Length > 0)
+                {
+                    using (var ms = new MemoryStream())
+                    {
+                        bankStatement.CopyTo(ms);
+                        var fileBytes = ms.ToArray();
+                        statements.Add(Convert.ToBase64String(fileBytes));
+                    }
+                }
+            }
+
+            var body = new CreateCreditApiBankStatementRequest
+            {
+                BankStatements = statements
+            };
+
+            return Ok(await _creditApiService.AddBankStatements(id, body));
+        }
+
+        [HttpPost("bankAccount/{id}/stitchTransactions/upload")]
+        [ProducesResponseType(typeof(CreateBankTransactionResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> SendStitchTransactionToCreditApi([FromRoute] int id, [FromBody] StitchTransactionUploadToCreditApiModel model)
+        {
+            var stitchTransactions = await _stitchService.GetAccountTransactions(
+                model.ContactId,
+                model.BankName,
+                model.StitchAccountNumber);
+
+            var transactions = stitchTransactions.Data.User.Transactions.Select(x =>
+              new BankAccountTransactionModel
+              {
+                  Amount = decimal.TryParse(x.Amount.Quantity, out var value) ? value : 0,
+                  BankTransactionType = decimal.TryParse(x.Amount.Quantity, out var amountValue) && amountValue > 0
+                    ? BankTransactionTypeEnum.Credit
+                    : amountValue < 0
+                    ? BankTransactionTypeEnum.Debit
+                    : BankTransactionTypeEnum.NonBalanceAffecting,
+                  TransactionDate = Convert.ToDateTime(x.Date),
+                  TransactionDescription = x.Description
+              })
+              .ToList();
+
+            return Ok(await _creditApiService.CreateBankAccountTransactions(id, transactions));
+        }
+
+        [HttpPost("company/{id}/fundingApplication/create")]
+        [ProducesResponseType(typeof(CreateCustomerCompanyFundingApplicationResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateCompanyFundingApplication([FromRoute] int id, [FromBody] FundingApplicationModel model)
+        {
+            var applicationResult = await _creditApiService.CreateCompanyFundingApplication(id, model);
+
+            return Ok(applicationResult);
+        }        
+
+        [HttpPost("fundingApplication/{id}/disbursmentBankAccount")]
+        [ProducesResponseType(typeof(FundingApplicationDisbursmentAccountResponse), StatusCodes.Status200OK)]
+        public async Task<IActionResult> CreateFundingApplicationDisbursmentBankAccount([FromRoute] int id, [FromBody] FundingApplicationDisbursmentAccount model)
+        {
+            var applicationResult = await _creditApiService.CreateFundingApplicationDisbursmentBankAccount(id, model);
+
+            return Ok(applicationResult);
+        }
+
+        [HttpPut("fundingQuote/{id}")]
+        [ProducesResponseType(typeof(CreditApiQuoteResponseModel), StatusCodes.Status200OK)]
+        public async Task<IActionResult> UpdateFundingQuote([FromRoute] int id, [FromBody] FundingQuoteModel model)
+        {
+            return Ok(await _creditApiService.UpdateFundingQuote(id, model));
+        }
+
+        [HttpPut("fundingQuote/{id}/accept")]
+        [ProducesResponseType(typeof(CreditApiQuoteResponseModel), StatusCodes.Status200OK)]
+        public async Task<IActionResult> AcceptFundingQuote([FromRoute] int id)
+        {
+            var response = await _creditApiService.AcceptFundingQuote(id);
+            return Ok(response);
+        }
+
+        [HttpPut("advance/{id}/sign")]
+        [ProducesResponseType(typeof(AdvanceLegalSigned), StatusCodes.Status200OK)]
+        public async Task<IActionResult> SignAdvanceAgreement([FromRoute] int id)
+        {
+            var response = await _creditApiService.SignAdvanceAgreement(id);
+            return Ok(response);
+        }
+    }
+}
