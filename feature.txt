@@ -88,7 +88,7 @@ namespace LulaLend.WebApi.Endpoints
         public async Task<IActionResult> GetCustomer([FromRoute] int id)
         {
             var resp = await _creditApiService.GetCustomer(id);
-
+feature 3 commit 1
             return Ok(resp);
         }
 
